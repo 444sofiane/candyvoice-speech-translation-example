@@ -1,0 +1,4 @@
+node_modules/
+.env
+# Test de charge : outil interne, non publié.
+loadtest/

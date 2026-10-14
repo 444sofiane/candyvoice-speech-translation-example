@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Visio · Traduction vocale</title>
+  <link rel="stylesheet" href="app.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-dot"></span>
+      <strong>Salle de test</strong>
+      <span class="muted">· traduction vocale CandyVoice</span>
+    </div>
+    <div class="topbar-right">
+      <span id="api-info" class="chip muted">API…</span>
+      <span id="clock" class="chip mono">0:00</span>
+    </div>
+  </header>
+
+  <main class="layout">
+    <section class="stage">
+      <div id="grid" class="grid" aria-live="polite"></div>
+      <p id="banner" class="banner" hidden></p>
+    </section>
+
+    <aside class="panel">
+      <nav class="tabs" role="tablist">
+        <button role="tab" data-tab="participants" aria-selected="true">Participants</button>
+        <button role="tab" data-tab="sessions" aria-selected="false">Sessions</button>
+        <button role="tab" data-tab="transcript" aria-selected="false">Phrases</button>
+        <button role="tab" data-tab="log" aria-selected="false">Journal</button>
+      </nav>
+
+      <div class="tab-body" data-panel="participants">
+        <ul id="participant-list" class="plist"></ul>
+        <button id="add-participant" class="btn ghost wide">+ Ajouter un participant</button>
+        <p class="hint">Chaque participant a un identifiant d'orateur opaque (<code>X-Speaker-Id</code>), stable d'une session à l'autre. Une session WebSocket est ouverte par langue d'écoute différente de la langue parlée.</p>
+      </div>
+
+      <div class="tab-body" data-panel="sessions" hidden>
+        <div id="session-list" class="sessions"><p class="hint">Aucune session. Activez le micro pour en ouvrir.</p></div>
+      </div>
+
+      <div class="tab-body" data-panel="transcript" hidden>
+        <ol id="sentence-list" class="sentences"></ol>
+      </div>
+
+      <div class="tab-body" data-panel="log" hidden>
+        <label class="row-inline"><input type="checkbox" id="log-live"> Inclure les messages <code>live</code></label>
+        <pre id="log" class="log"></pre>
+        <button id="clear-log" class="btn ghost wide">Vider le journal</button>
+      </div>
+    </aside>
+  </main>
+
+  <footer class="controls">
+    <label class="ctl">
+      <span>Je parle en tant que</span>
+      <select id="speaking-as"></select>
+    </label>
+    <button id="mic" class="btn mic" aria-pressed="false" title="Activer / couper le micro">
+      <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path fill="currentColor" d="M12 14a3 3 0 0 0 3-3V5a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3Zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.92V21h2v-3.08A7 7 0 0 0 19 11h-2Z"/></svg>
+      <span id="mic-label">Micro coupé</span>
+    </button>
+    <label class="ctl">
+      <span>J'écoute en tant que</span>
+      <select id="listening-as"></select>
+    </label>
+    <label class="ctl volume">
+      <span>Volume</span>
+      <input id="volume" type="range" min="0" max="1" step="0.05" value="1">
+    </label>
+  </footer>
+
+  <dialog id="participant-dialog" class="dialog">
+    <form method="dialog" id="participant-form">
+      <h2 id="participant-dialog-title">Participant</h2>
+      <label>Nom affiché <input name="name" required maxlength="40"></label>
+      <label>Identifiant d'orateur (<code>X-Speaker-Id</code>)
+        <input name="speakerId" required pattern="[A-Za-z0-9_\-]{1,64}" class="mono">
+      </label>
+      <div class="two">
+        <label>Langue parlée <select name="spoken"></select></label>
+        <label>Langue d'écoute <select name="listen"></select></label>
+      </div>
+      <p class="hint">Identifiant opaque : pas de nom ni d'e-mail. Changer l'identifiant revient à changer d'orateur côté CandyVoice.</p>
+      <menu>
+        <button value="cancel" class="btn ghost" formnovalidate>Annuler</button>
+        <button value="save" class="btn primary">Enregistrer</button>
+      </menu>
+    </form>
+  </dialog>
+
+  <dialog id="enroll-dialog" class="dialog wide">
+    <div class="enroll">
+      <h2>Enrôler la voix de <span id="enroll-name"></span></h2>
+      <p class="muted">Lisez à voix haute, d'une traite, les <span id="enroll-count">25</span> phrases ci-dessous, en <strong id="enroll-language"></strong>. Entre 30 s et 10 min (environ 3 min en pratique).</p>
+      <ol id="enroll-sentences" class="corpus"></ol>
+      <label class="consent">
+        <input type="checkbox" id="enroll-consent">
+        <span>J'accepte que ma voix (donnée biométrique) soit conservée par CandyVoice pour lire les traductions avec ma voix, jusqu'à ce que je la supprime.</span>
+      </label>
+      <div class="enroll-bar">
+        <button id="enroll-record" class="btn primary" disabled>● Enregistrer</button>
+        <span id="enroll-timer" class="mono">0:00</span>
+        <div class="meter"><div id="enroll-level"></div></div>
+        <audio id="enroll-preview" controls hidden></audio>
+      </div>
+      <p id="enroll-message" class="message" hidden></p>
+      <menu>
+        <button id="enroll-cancel" class="btn ghost">Fermer</button>
+        <button id="enroll-upload" class="btn primary" disabled>Envoyer l'enrôlement</button>
+      </menu>
+    </div>
+  </dialog>
+
+  <div id="toasts" class="toasts" aria-live="assertive"></div>
+
+  <script src="app.js" type="module"></script>
+</body>
+</html>
