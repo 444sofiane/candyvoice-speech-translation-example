@@ -166,13 +166,18 @@ function log(scope, direction, payload) {
 }
 
 // --- Micro ---------------------------------------------------------------------
-async function openMic(onChunk) {
+// raw (enrôlement) : aucun traitement du navigateur. Sa suppression de bruit
+// et son gain automatique laissent des artefacts que le détecteur de voix de
+// synthèse de l'API prend pour un deepfake (422 à l'enrôlement) ; l'API filtre
+// elle-même le bruit, après cette détection. En direct, on garde seulement
+// l'annulation d'écho, comme le site CandyVoice (mic-recorder.ts).
+async function openMic(onChunk, { raw = false } = {}) {
   if (!navigator.mediaDevices?.getUserMedia) {
     throw new Error('Micro indisponible : ouvrez la page en HTTPS ou via http://localhost (tunnel SSH).');
   }
   const stream = await navigator.mediaDevices.getUserMedia({
     // L'annulation d'écho évite que le micro retranscrive la traduction diffusée.
-    audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1 },
+    audio: { echoCancellation: !raw, noiseSuppression: false, autoGainControl: false, channelCount: 1 },
   });
   const ctx = new AudioContext();
   try {
@@ -1036,7 +1041,7 @@ $('#enroll-record').addEventListener('click', async () => {
       if (!downsampler) return;
       downsampler.push(samples);
       $('#enroll-level').style.width = `${Math.min(100, rms(samples) * 400)}%`;
-    });
+    }, { raw: true });
     downsampler = new Downsampler(enroll.capture.sampleRate, ENROLL_SAMPLE_RATE);
     enroll.downsampler = downsampler;
   } catch (err) {
