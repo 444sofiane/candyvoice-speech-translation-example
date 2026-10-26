@@ -81,6 +81,7 @@ code, .mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; 
 .badge.warn { color: var(--warn); }
 .badge.speak { color: var(--speak); }
 .badge.listen { color: var(--listen); }
+.badge.danger { color: var(--danger); font-weight: 600; }
 .caption {
   position: absolute; left: 10px; right: 10px; bottom: 10px;
   background: rgba(0,0,0,.65); border-radius: 8px; padding: 6px 10px;
@@ -123,6 +124,8 @@ code, .mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; 
 .state.ready { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 50%, transparent); }
 .state.error { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 50%, transparent); }
 .state.done { color: var(--accent-2); }
+.state.warn { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 50%, transparent); }
+.session.is-mismatch { border-color: color-mix(in srgb, var(--warn) 60%, transparent); }
 
 .sentences { margin: 0; padding-left: 0; list-style: none; display: flex; flex-direction: column; gap: 8px; }
 .sentences li { background: var(--surface-2); border: 1px solid var(--border); border-radius: 10px; padding: 8px 10px; }
@@ -193,3 +196,4 @@ select:disabled { opacity: .6; }
 .toast { background: var(--surface-2); border: 1px solid var(--border); border-left: 4px solid var(--accent); border-radius: 8px; padding: 10px 12px; box-shadow: 0 6px 24px rgba(0,0,0,.4); }
 .toast.error { border-left-color: var(--danger); }
 .toast.ok { border-left-color: var(--ok); }
+.toast.warn { border-left-color: var(--warn); }

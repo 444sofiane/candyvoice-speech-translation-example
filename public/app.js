@@ -55,7 +55,7 @@ function el(tag, attrs = {}, ...children) {
 function toast(message, kind = '') {
   const node = el('div', { class: `toast ${kind}`, text: message });
   $('#toasts').append(node);
-  setTimeout(() => node.remove(), kind === 'error' ? 9000 : 5000);
+  setTimeout(() => node.remove(), ['error', 'warn'].includes(kind) ? 9000 : 5000);
 }
 
 function formatClock(seconds) {
@@ -110,6 +110,8 @@ function defaultRoom() {
     speakingAs: 'p1',
     listeningAs: 'p2',
     volume: 1,
+    vocabulary: '',
+    vocabularyDefinitions: false,
   };
 }
 
@@ -138,6 +140,7 @@ const speaker = () => participantById(room.speakingAs) || room.participants[0];
 const listener = () => participantById(room.listeningAs);
 
 let apiConfig = null; // GET /api/speech-translation/config
+let vocabularies = []; // GET /api/speech-translation/vocabularies
 const enrollment = new Map(); // speakerId -> { status } | { error }
 
 // --- Journal -------------------------------------------------------------------
@@ -368,6 +371,8 @@ function openSession(who, target, sampleRate) {
     key: `${who.speakerId}:${target || '-'}:${Date.now()}`,
     source: who.spoken,
     target,
+    vocabulary: room.vocabulary || null,
+    vocabularyDefinitions: Boolean(room.vocabulary && room.vocabularyDefinitions),
     speakerId: who.speakerId,
     speakerName: who.name,
     ws: null,
@@ -381,6 +386,7 @@ function openSession(who, target, sampleRate) {
     delays: [],
     result: null,
     error: null,
+    speakerMismatch: false,
     closeCode: null,
     openedAt: performance.now(),
     readyMs: null,
@@ -400,6 +406,8 @@ function openSession(who, target, sampleRate) {
       speaker_id: who.speakerId,
     };
     if (target) start.target_language = target;
+    if (session.vocabulary) start.vocabulary = session.vocabulary;
+    if (session.vocabularyDefinitions) start.vocabulary_definitions = true;
     log(scope, '→', start);
     ws.send(JSON.stringify(start));
   };
@@ -441,6 +449,9 @@ function openSession(who, target, sampleRate) {
       case 'stage':
         if (msg.stage === 'finishing') session.state = 'finalisation';
         break;
+      case 'imitation_stopped':
+        flagSpeakerMismatch(session);
+        break;
       case 'limit_reached':
         toast(`${scope} : durée maximale de session atteinte (${msg.max_seconds} s).`);
         session.state = 'finalisation';
@@ -449,6 +460,7 @@ function openSession(who, target, sampleRate) {
       case 'result':
         session.result = msg;
         session.state = 'terminée';
+        if (msg.speaker_mismatch) flagSpeakerMismatch(session);
         if (typeof msg.transcript === 'string') session.text.transcript = msg.transcript;
         if (typeof msg.translation === 'string') session.text.translation = msg.translation;
         session.text.transcript_pending = '';
@@ -458,6 +470,7 @@ function openSession(who, target, sampleRate) {
       case 'error':
         session.error = msg.error || JSON.stringify(msg);
         session.state = 'erreur';
+        if (msg.speaker_mismatch) flagSpeakerMismatch(session);
         toast(`${scope} : ${session.error}`, 'error');
         break;
       default:
@@ -481,6 +494,17 @@ function openSession(who, target, sampleRate) {
 
   ws.onerror = () => log(scope, '!', 'erreur WebSocket');
   return session;
+}
+
+// Voix différente de l'enrôlement (mode enforce) : l'API coupe l'imitation
+// jusqu'à la fin de la session. Un seul toast pour toutes les langues cibles.
+function flagSpeakerMismatch(session) {
+  if (session.speakerMismatch) return;
+  const first = !live.sessions.some((s) => s.speakerMismatch);
+  session.speakerMismatch = true;
+  if (first) toast(`⚠ ${session.speakerName} : la voix ne correspond pas à l'enrôlement. Imitation arrêtée, voix de synthèse jusqu'à la fin de la session.`, 'warn');
+  renderGrid();
+  renderBanner();
 }
 
 function onSentenceAudio(session, header, wav, rate) {
@@ -601,6 +625,8 @@ function setLiveState(state) {
     finishing: 'Finalisation…',
   }[state];
   $('#speaking-as').disabled = state !== 'idle';
+  $('#vocabulary').disabled = state !== 'idle';
+  $('#vocabulary-definitions').disabled = state !== 'idle' || !room.vocabulary;
   renderParticipants();
 }
 
@@ -635,7 +661,8 @@ function renderGrid() {
     el('div', { class: 'tile-badges' },
       isSpeaker ? el('span', { class: 'badge speak', text: '🎙 parle' }) : null,
       heard?.id === p.id ? el('span', { class: 'badge listen', text: '🎧 écoute' }) : null,
-      status ? el('span', { class: `badge ${status.complete ? 'ok' : 'warn'}`, text: status.complete ? 'voix enrôlée' : 'non enrôlé' }) : null),
+      status ? el('span', { class: `badge ${status.complete ? 'ok' : 'warn'}`, text: status.complete ? 'voix enrôlée' : 'non enrôlé' }) : null,
+      isSpeaker && live.sessions.some((s) => s.speakerMismatch) ? el('span', { class: 'badge danger', text: '⚠ voix non reconnue' }) : null),
     el('div', { class: 'caption' }));
     grid.append(tile);
   }
@@ -739,11 +766,13 @@ function renderSessions() {
     const stateClass = { prête: 'ready', erreur: 'error', terminée: 'done' }[s.state] || '';
     const rows = [
       ['Orateur', `${s.speakerName} · ${s.speakerId}`],
+      ['Vocabulaire', s.vocabulary ? `${s.vocabulary}${s.vocabularyDefinitions ? ' · définitions' : ''}` : null],
       ['Prête en', s.readyMs !== null ? `${s.readyMs} ms` : null],
       ['max_seconds', s.maxSeconds],
       ['Audio envoyé', `${s.sentAudioSeconds.toFixed(1)} s`],
       ['Phrases reçues', s.sentences],
       ['Voix de l\'orateur', s.sentences ? `${s.imitated} / ${s.sentences} (imitation_applied)` : null],
+      ['Vérification voix', s.speakerMismatch ? '⚠ voix différente de l\'enrôlement : imitation arrêtée' : null],
       ['delay_ms', avg !== null ? `moy. ${avg} · max ${Math.max(...s.delays)}` : null],
       ['Erreur', s.error],
     ];
@@ -757,8 +786,9 @@ function renderSessions() {
         ['Offre', r.plan ? `${r.plan} · ${r.max_session_seconds} s` : null],
       );
     }
-    return el('div', { class: 'session' },
-      el('h3', {}, el('span', { text: sessionLabel(s) }), el('span', { class: `state ${stateClass}`, text: s.state })),
+    return el('div', { class: `session${s.speakerMismatch ? ' is-mismatch' : ''}` },
+      el('h3', {}, el('span', { text: sessionLabel(s) }),
+        el('span', {}, s.speakerMismatch ? el('span', { class: 'state warn', text: 'voix non reconnue' }) : null, ' ', el('span', { class: `state ${stateClass}`, text: s.state }))),
       el('dl', {}, rows.filter(([, v]) => v !== null && v !== undefined && v !== '').map(([k, v]) => [el('dt', { text: k }), el('dd', { text: String(v) })])),
       r?.output_url ? el('p', {},
         el('a', { href: r.output_url, target: '_blank', rel: 'noopener', text: 'Piste traduite entière' }),
@@ -788,6 +818,10 @@ function renderSentence(entry) {
 // --- Bandeau d'avertissements ------------------------------------------------------------
 function renderBanner() {
   const notes = [];
+  const mismatch = live.sessions.find((s) => s.speakerMismatch);
+  if (mismatch) {
+    notes.push(el('strong', { text: `⚠ Voix de ${mismatch.speakerName} différente de son enrôlement : l'imitation est arrêtée, les traductions sont lues avec la voix de synthèse jusqu'à la fin de la session.` }));
+  }
   if (!window.isSecureContext) {
     notes.push('Page non sécurisée : le navigateur refusera le micro. Ouvrez-la via http://localhost (tunnel SSH) ou en HTTPS.');
   }
@@ -798,6 +832,10 @@ function renderBanner() {
   const status = enrollment.get(who.speakerId)?.status;
   if (apiConfig?.imitation_mode === 'knnvc' && status && !status.complete) {
     notes.push(`${who.name} n'est pas enrôlé : ses traductions seront lues avec la voix de synthèse standard.`);
+  }
+  const vocab = vocabularies.find((v) => v.name === room.vocabulary);
+  if (vocab?.language && vocab.language !== who.spoken) {
+    notes.push(`Le vocabulaire « ${vocab.name} » est prévu pour ${langName(vocab.language)}, ${who.name} parle ${langName(who.spoken)} : peu de sigles seront corrigés.`);
   }
   const targets = neededTargets(who).filter(Boolean);
   const silent = targets.filter((t) => !VOICED_TARGETS.has(t) || t === 'zh');
@@ -1039,6 +1077,18 @@ $('#speaking-as').addEventListener('change', (e) => {
   renderAll();
 });
 
+$('#vocabulary').addEventListener('change', (e) => {
+  room.vocabulary = e.target.value;
+  saveRoom();
+  $('#vocabulary-definitions').disabled = !room.vocabulary;
+  renderBanner();
+});
+
+$('#vocabulary-definitions').addEventListener('change', (e) => {
+  room.vocabularyDefinitions = e.target.checked;
+  saveRoom();
+});
+
 $('#listening-as').addEventListener('change', (e) => {
   room.listeningAs = e.target.value;
   saveRoom();
@@ -1085,8 +1135,32 @@ async function init() {
   } catch {
     $('#api-info').textContent = 'serveur local injoignable';
   }
+  await loadVocabularies();
   renderBanner();
   await Promise.all(room.participants.map(refreshEnrollment));
+}
+
+// Vocabulaires métier proposés par l'API ; celui gardé dans la salle est
+// oublié s'il n'existe plus (l'API refuserait la session : 400).
+async function loadVocabularies() {
+  try {
+    const response = await fetch('vocabularies');
+    if (!response.ok) throw new Error(await errorText(response));
+    vocabularies = (await response.json()).vocabularies || [];
+  } catch (err) {
+    vocabularies = [];
+    log('vocabulaires', '!', err.message);
+  }
+  const select = $('#vocabulary');
+  select.replaceChildren(
+    el('option', { value: '', text: '— aucun —' }),
+    ...vocabularies.map((v) => el('option', { value: v.name, text: `${v.name}${v.language ? ` (${v.language})` : ''} · ${v.terms} sigles` })),
+  );
+  if (!vocabularies.some((v) => v.name === room.vocabulary)) room.vocabulary = '';
+  select.value = room.vocabulary;
+  $('#vocabulary-definitions').checked = room.vocabularyDefinitions;
+  $('#vocabulary-definitions').disabled = !room.vocabulary;
+  saveRoom();
 }
 
 init();

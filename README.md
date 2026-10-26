@@ -81,7 +81,9 @@ fermeture `4403`).
   "sample_rate": 48000,
   "source_language": "fr",
   "target_language": "en",
-  "speaker_id": "a1b2c3d4"
+  "speaker_id": "a1b2c3d4",
+  "vocabulary": "gendarmerie",
+  "vocabulary_definitions": true
 }
 ```
 
@@ -92,6 +94,13 @@ fermeture `4403`).
   traduction).
 - `speaker_id` est un identifiant **opaque et stable** de l'orateur. Il
   permet de retrouver sa voix enrôlée. N'y mettez pas d'e-mail ni de nom.
+- `vocabulary` (facultatif) : vocabulaire métier dont les sigles sont
+  corrigés dans la transcription, avant la traduction (« gigne » → « GIGN »).
+  La liste vient de `GET /api/speech-translation/vocabularies` ; un nom
+  inconnu fait échouer la session (400). Avec `vocabulary_definitions: true`,
+  la transcription affichée ajoute la définition de chaque sigle à sa
+  première occurrence : « le GIGN (Groupe d'Intervention de la Gendarmerie
+  Nationale) ». La traduction et la voix restent sans définitions.
 
 La session répond `ready` (avec `max_seconds`, la durée maximale autorisée
 par votre offre). Vous pouvez alors envoyer l'audio.
@@ -156,6 +165,9 @@ l'envoi.
 - **J'écoute en tant que** : choisit le participant dont vous entendez la
   traduction. Les autres phrases restent réécoutables dans l'onglet
   *Phrases*.
+- **Vocabulaire métier / définitions** : choisis avant d'activer le micro,
+  envoyés dans le `start` de chaque session (`vocabulary`,
+  `vocabulary_definitions`).
 - **Sous-titres** : sur chaque tuile, la transcription pour l'orateur, la
   traduction pour les autres. La partie encore en cours est en italique.
 - **Sessions / Journal** : état de chaque session, délais, résultat final,
@@ -173,6 +185,13 @@ l'envoi.
    standard.
 4. Choisissez une langue d'écoute sans voix de synthèse (`ga`, `zh`) : la
    traduction est disponible en sous-titres seulement.
+5. Choisissez le vocabulaire `gendarmerie`, parlez en tant que Moi (fr) en
+   citant des sigles (« le GIGN et la BRI interviennent… ») : ils sont écrits
+   correctement dans les sous-titres, avec leur définition si la case est
+   cochée.
+6. Faites parler quelqu'un d'autre que la personne enrôlée (mode `enforce`
+   côté API) : après quelques phrases, un avertissement « voix non
+   reconnue » apparaît et la suite est lue avec la voix de synthèse.
 
 ## Langues
 

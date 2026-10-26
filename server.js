@@ -124,6 +124,11 @@ const server = http.createServer(async (req, res) => {
       return sendJson(res, 200, { api_url: API_URL, api_config: config });
     }
 
+    if (req.method === 'GET' && pathname === '/vocabularies') {
+      const upstream = await fetch(`${API_URL}/api/speech-translation/vocabularies`, { headers: { 'X-API-Key': API_KEY } });
+      return await relayResponse(res, upstream);
+    }
+
     const voice = pathname.match(/^\/voice\/([^/]+)$/);
     if (voice && ['GET', 'POST', 'DELETE'].includes(req.method)) {
       return await proxyVoice(req, res, decodeURIComponent(voice[1]), url.searchParams);
