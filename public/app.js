@@ -394,6 +394,9 @@ function openSession(who, target, sampleRate) {
     result: null,
     error: null,
     speakerMismatch: false,
+    // speaker_verification reçu de l'API (VOICE_VERIFY_SHOW_SCORES ou admin) :
+    // dernier contrôle, nombre de contrôles notés et d'écarts (score sous le seuil).
+    verify: { last: null, checks: 0, below: 0 },
     closeCode: null,
     openedAt: performance.now(),
     readyMs: null,
@@ -457,6 +460,7 @@ function openSession(who, target, sampleRate) {
         if (msg.stage === 'finishing') session.state = 'finalisation';
         break;
       case 'imitation_stopped':
+        if (msg.speaker_verification) session.verify.last = msg.speaker_verification;
         flagSpeakerMismatch(session);
         break;
       case 'limit_reached':
@@ -518,6 +522,15 @@ function onSentenceAudio(session, header, wav, rate) {
   session.sentences += 1;
   if (header?.imitation_applied) session.imitated += 1;
   if (typeof header?.delay_ms === 'number') session.delays.push(header.delay_ms);
+  const check = header?.speaker_verification;
+  if (check) {
+    session.verify.last = check;
+    // Sans score : pas encore assez de parole, ou session déjà coupée.
+    if (typeof check.score === 'number') {
+      session.verify.checks += 1;
+      if (check.below) session.verify.below += 1;
+    }
+  }
 
   const heard = heardSession();
   const audible = heard === session;
@@ -528,6 +541,7 @@ function onSentenceAudio(session, header, wav, rate) {
     text: header?.text || '',
     delayMs: header?.delay_ms,
     imitation: header?.imitation_applied,
+    check: typeof check?.score === 'number' ? check : null,
     rate,
     url: URL.createObjectURL(new Blob([wav], { type: 'audio/wav' })),
     heard: audible,
@@ -759,6 +773,26 @@ function renderParticipants() {
   $('#add-participant').disabled = busy;
 }
 
+const percent = (x) => `${Math.round(x * 100)} %`;
+
+// Vérification de la voix telle que reçue : similarité du dernier contrôle
+// face au seuil, compte d'écarts consécutifs avant coupure, part des
+// contrôles en écart.
+function verifySummary(s) {
+  const { last, checks, below } = s.verify;
+  if (!last) {
+    return apiConfig?.imitation_mode === 'knnvc' && s.sentences
+      ? 'scores non communiqués par l\'API (VOICE_VERIFY_SHOW_SCORES=1 côté API)' : null;
+  }
+  const parts = [];
+  if (typeof last.score === 'number') parts.push(`similarité ${percent(last.score)} (seuil ${percent(last.threshold)})`);
+  else if (!checks) parts.push('pas encore assez de parole');
+  if (last.consecutive_needed) parts.push(`écarts de suite ${last.consecutive ?? 0}/${last.consecutive_needed}`);
+  if (checks) parts.push(`${percent(below / checks)} des contrôles en écart (${below}/${checks})`);
+  if (last.mode && last.mode !== 'enforce') parts.push(`mode ${last.mode}`);
+  return parts.join(' · ');
+}
+
 // --- Rendu : panneau Sessions -----------------------------------------------------------
 function renderSessions() {
   const box = $('#session-list');
@@ -780,6 +814,7 @@ function renderSessions() {
       ['Phrases reçues', s.sentences],
       ['Voix de l\'orateur', s.sentences ? `${s.imitated} / ${s.sentences} (imitation_applied)` : null],
       ['Vérification voix', s.speakerMismatch ? '⚠ voix différente de l\'enrôlement : imitation arrêtée' : null],
+      ['Détection d\'écart', verifySummary(s)],
       ['delay_ms', avg !== null ? `moy. ${avg} · max ${Math.max(...s.delays)}` : null],
       ['Erreur', s.error],
     ];
@@ -789,6 +824,8 @@ function renderSessions() {
         ['live_sentence_delay_ms', r.live_sentence_delay_ms ? JSON.stringify(r.live_sentence_delay_ms) : null],
         ['voice_model', r.voice_model],
         ['imitation_applied', r.imitation_applied === undefined ? null : String(r.imitation_applied)],
+        ['Similarité min.', typeof r.speaker_verification?.score === 'number'
+          ? `${percent(r.speaker_verification.score)} sur ${r.speaker_verification.checks ?? '?'} contrôles` : null],
         ['Avertissements', [r.translation_error, r.tts_error, r.imitation_error].filter(Boolean).join(' · ') || null],
         ['Offre', r.plan ? `${r.plan} · ${r.max_session_seconds} s` : null],
       );
@@ -815,6 +852,11 @@ function renderSentence(entry) {
       el('span', { text: entry.speakerName }),
       entry.delayMs !== undefined ? el('span', { text: `${entry.delayMs} ms` }) : null,
       el('span', { class: entry.imitation ? 'badge ok' : 'badge warn', text: entry.imitation ? 'voix de l\'orateur' : 'voix standard' }),
+      entry.check ? el('span', {
+        class: `badge ${entry.check.below ? 'danger' : 'ok'}`,
+        title: `Similarité avec l'enrôlement, seuil ${percent(entry.check.threshold)}`,
+        text: `similarité ${percent(entry.check.score)}${entry.check.below ? ` · écart ${entry.check.consecutive}/${entry.check.consecutive_needed}` : ''}`,
+      }) : null,
       entry.rate ? el('span', { text: `${entry.rate / 1000} kHz` }) : null,
       entry.heard ? el('span', { class: 'badge listen', text: 'diffusée' }) : null),
     el('div', { text: entry.text }),

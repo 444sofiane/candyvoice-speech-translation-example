@@ -159,6 +159,14 @@ Dans l'UI, l'orateur lit les premières phrases du corpus de sa langue
 (`corpus/<code>.txt`). L'enregistrement est rééchantillonné en 16 kHz avant
 l'envoi.
 
+**Détection d'une autre voix.** L'API compare la voix de chaque phrase à
+l'enrôlement et coupe l'imitation après 3 écarts consécutifs (message
+`imitation_stopped`). Si l'API tourne avec `VOICE_VERIFY_SHOW_SCORES=1`
+(environnement de test uniquement), chaque `live_audio` porte aussi
+`speaker_verification` : le panneau Sessions affiche alors la similarité du
+dernier contrôle face au seuil, le compte d'écarts consécutifs et la part des
+contrôles en écart ; chaque phrase affiche sa similarité.
+
 ## Utiliser l'interface
 
 - **Participants** : chacun a un nom, un `speaker_id` (gardé dans le
