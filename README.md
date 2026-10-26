@@ -82,7 +82,7 @@ fermeture `4403`).
   "source_language": "fr",
   "target_language": "en",
   "speaker_id": "a1b2c3d4",
-  "vocabulary": "gendarmerie",
+  "vocabulary": ["common", "gendarmerie"],
   "vocabulary_definitions": true
 }
 ```
@@ -94,13 +94,16 @@ fermeture `4403`).
   traduction).
 - `speaker_id` est un identifiant **opaque et stable** de l'orateur. Il
   permet de retrouver sa voix enrôlée. N'y mettez pas d'e-mail ni de nom.
-- `vocabulary` (facultatif) : vocabulaire métier dont les sigles sont
-  corrigés dans la transcription, avant la traduction (« gigne » → « GIGN »).
+- `vocabulary` (facultatif) : un nom ou une liste de noms de vocabulaires
+  métier (5 au plus), par ordre de priorité — le premier l'emporte si deux
+  vocabulaires ont le même sigle. Leurs sigles sont corrigés dans la
+  transcription (« gigne » → « GIGN ») et gardés tels quels à la traduction.
   La liste vient de `GET /api/speech-translation/vocabularies` ; un nom
   inconnu fait échouer la session (400). Avec `vocabulary_definitions: true`,
   la transcription affichée ajoute la définition de chaque sigle à sa
   première occurrence : « le GIGN (Groupe d'Intervention de la Gendarmerie
-  Nationale) ». La traduction et la voix restent sans définitions.
+  Nationale) », et la traduction la définition traduite. La voix lit le
+  texte sans définitions.
 
 La session répond `ready` (avec `max_seconds`, la durée maximale autorisée
 par votre offre). Vous pouvez alors envoyer l'audio.
@@ -165,9 +168,10 @@ l'envoi.
 - **J'écoute en tant que** : choisit le participant dont vous entendez la
   traduction. Les autres phrases restent réécoutables dans l'onglet
   *Phrases*.
-- **Vocabulaire métier / définitions** : choisis avant d'activer le micro,
+- **Vocabulaires métier / définitions** : choisis avant d'activer le micro,
   envoyés dans le `start` de chaque session (`vocabulary`,
-  `vocabulary_definitions`).
+  `vocabulary_definitions`). Plusieurs vocabulaires peuvent être cochés ;
+  l'ordre dans lequel ils le sont (numéro affiché) est leur priorité.
 - **Sous-titres** : sur chaque tuile, la transcription pour l'orateur, la
   traduction pour les autres. La partie encore en cours est en italique.
 - **Sessions / Journal** : état de chaque session, délais, résultat final,

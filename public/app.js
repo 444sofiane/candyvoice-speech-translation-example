@@ -110,7 +110,9 @@ function defaultRoom() {
     speakingAs: 'p1',
     listeningAs: 'p2',
     volume: 1,
-    vocabulary: '',
+    // Noms dans l'ordre où ils ont été cochés : le premier l'emporte si
+    // deux vocabulaires ont le même sigle.
+    vocabularies: [],
     vocabularyDefinitions: false,
   };
 }
@@ -118,7 +120,12 @@ function defaultRoom() {
 function loadRoom() {
   try {
     const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || 'null');
-    if (saved && Array.isArray(saved.participants) && saved.participants.length) return { ...defaultRoom(), ...saved };
+    if (saved && Array.isArray(saved.participants) && saved.participants.length) {
+      // Salle gardée avant les vocabulaires multiples : un seul nom.
+      const vocabularies = Array.isArray(saved.vocabularies) ? saved.vocabularies : [saved.vocabulary].filter(Boolean);
+      const { vocabulary: _legacy, ...rest } = saved;
+      return { ...defaultRoom(), ...rest, vocabularies };
+    }
   } catch {
     // Stockage indisponible ou illisible : salle par défaut.
   }
@@ -371,8 +378,8 @@ function openSession(who, target, sampleRate) {
     key: `${who.speakerId}:${target || '-'}:${Date.now()}`,
     source: who.spoken,
     target,
-    vocabulary: room.vocabulary || null,
-    vocabularyDefinitions: Boolean(room.vocabulary && room.vocabularyDefinitions),
+    vocabularies: [...room.vocabularies],
+    vocabularyDefinitions: Boolean(room.vocabularies.length && room.vocabularyDefinitions),
     speakerId: who.speakerId,
     speakerName: who.name,
     ws: null,
@@ -406,7 +413,7 @@ function openSession(who, target, sampleRate) {
       speaker_id: who.speakerId,
     };
     if (target) start.target_language = target;
-    if (session.vocabulary) start.vocabulary = session.vocabulary;
+    if (session.vocabularies.length) start.vocabulary = session.vocabularies;
     if (session.vocabularyDefinitions) start.vocabulary_definitions = true;
     log(scope, '→', start);
     ws.send(JSON.stringify(start));
@@ -625,8 +632,8 @@ function setLiveState(state) {
     finishing: 'Finalisation…',
   }[state];
   $('#speaking-as').disabled = state !== 'idle';
-  $('#vocabulary').disabled = state !== 'idle';
-  $('#vocabulary-definitions').disabled = state !== 'idle' || !room.vocabulary;
+  for (const box of $('#vocabularies').querySelectorAll('input')) box.disabled = state !== 'idle';
+  $('#vocabulary-definitions').disabled = state !== 'idle' || !room.vocabularies.length;
   renderParticipants();
 }
 
@@ -766,7 +773,7 @@ function renderSessions() {
     const stateClass = { prête: 'ready', erreur: 'error', terminée: 'done' }[s.state] || '';
     const rows = [
       ['Orateur', `${s.speakerName} · ${s.speakerId}`],
-      ['Vocabulaire', s.vocabulary ? `${s.vocabulary}${s.vocabularyDefinitions ? ' · définitions' : ''}` : null],
+      ['Vocabulaires', s.vocabularies.length ? `${s.vocabularies.join(' → ')}${s.vocabularyDefinitions ? ' · définitions' : ''}` : null],
       ['Prête en', s.readyMs !== null ? `${s.readyMs} ms` : null],
       ['max_seconds', s.maxSeconds],
       ['Audio envoyé', `${s.sentAudioSeconds.toFixed(1)} s`],
@@ -833,9 +840,10 @@ function renderBanner() {
   if (apiConfig?.imitation_mode === 'knnvc' && status && !status.complete) {
     notes.push(`${who.name} n'est pas enrôlé : ses traductions seront lues avec la voix de synthèse standard.`);
   }
-  const vocab = vocabularies.find((v) => v.name === room.vocabulary);
-  if (vocab?.language && vocab.language !== who.spoken) {
-    notes.push(`Le vocabulaire « ${vocab.name} » est prévu pour ${langName(vocab.language)}, ${who.name} parle ${langName(who.spoken)} : peu de sigles seront corrigés.`);
+  for (const vocab of vocabularies.filter((v) => room.vocabularies.includes(v.name))) {
+    if (vocab.language && vocab.language !== who.spoken) {
+      notes.push(`Le vocabulaire « ${vocab.name} » est prévu pour ${langName(vocab.language)}, ${who.name} parle ${langName(who.spoken)} : peu de sigles seront corrigés.`);
+    }
   }
   const targets = neededTargets(who).filter(Boolean);
   const silent = targets.filter((t) => !VOICED_TARGETS.has(t) || t === 'zh');
@@ -1077,10 +1085,12 @@ $('#speaking-as').addEventListener('change', (e) => {
   renderAll();
 });
 
-$('#vocabulary').addEventListener('change', (e) => {
-  room.vocabulary = e.target.value;
+$('#vocabularies').addEventListener('change', (e) => {
+  const { value, checked } = e.target;
+  room.vocabularies = room.vocabularies.filter((name) => name !== value);
+  if (checked) room.vocabularies.push(value);
   saveRoom();
-  $('#vocabulary-definitions').disabled = !room.vocabulary;
+  renderVocabularies();
   renderBanner();
 });
 
@@ -1140,8 +1150,26 @@ async function init() {
   await Promise.all(room.participants.map(refreshEnrollment));
 }
 
-// Vocabulaires métier proposés par l'API ; celui gardé dans la salle est
-// oublié s'il n'existe plus (l'API refuserait la session : 400).
+// Une case par vocabulaire, avec son rang de priorité une fois coché.
+function renderVocabularies() {
+  const idle = live.state === 'idle';
+  $('#vocabularies').replaceChildren(
+    ...(vocabularies.length ? [] : [el('span', { text: '— aucun —' })]),
+    ...vocabularies.map((v) => {
+      const rank = room.vocabularies.indexOf(v.name);
+      const box = el('input', { type: 'checkbox', value: v.name });
+      box.checked = rank >= 0;
+      box.disabled = !idle;
+      const label = `${rank >= 0 ? `${rank + 1}. ` : ''}${v.name}${v.language ? ` (${v.language})` : ''} · ${v.terms} sigles`;
+      return el('label', { class: 'row-inline' }, [box, label]);
+    }),
+  );
+  $('#vocabulary-definitions').checked = room.vocabularyDefinitions;
+  $('#vocabulary-definitions').disabled = !idle || !room.vocabularies.length;
+}
+
+// Vocabulaires métier proposés par l'API ; ceux gardés dans la salle sont
+// oubliés s'ils n'existent plus (l'API refuserait la session : 400).
 async function loadVocabularies() {
   try {
     const response = await fetch('vocabularies');
@@ -1151,15 +1179,8 @@ async function loadVocabularies() {
     vocabularies = [];
     log('vocabulaires', '!', err.message);
   }
-  const select = $('#vocabulary');
-  select.replaceChildren(
-    el('option', { value: '', text: '— aucun —' }),
-    ...vocabularies.map((v) => el('option', { value: v.name, text: `${v.name}${v.language ? ` (${v.language})` : ''} · ${v.terms} sigles` })),
-  );
-  if (!vocabularies.some((v) => v.name === room.vocabulary)) room.vocabulary = '';
-  select.value = room.vocabulary;
-  $('#vocabulary-definitions').checked = room.vocabularyDefinitions;
-  $('#vocabulary-definitions').disabled = !room.vocabulary;
+  room.vocabularies = room.vocabularies.filter((name) => vocabularies.some((v) => v.name === name));
+  renderVocabularies();
   saveRoom();
 }
 
