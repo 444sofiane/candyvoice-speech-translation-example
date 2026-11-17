@@ -786,7 +786,7 @@ const percent = (x) => `${Math.round(x * 100)} %`;
 function verifySummary(s) {
   const { last, checks, below } = s.verify;
   if (!last) {
-    return apiConfig?.imitation_mode === 'knnvc' && s.sentences
+    return apiConfig?.imitation_mode === 'own_voice' && s.sentences
       ? 'scores non communiqués par l\'API (VOICE_VERIFY_SHOW_SCORES=1 côté API)' : null;
   }
   const parts = [];
@@ -879,12 +879,12 @@ function renderBanner() {
   if (!window.isSecureContext) {
     notes.push('Page non sécurisée : le navigateur refusera le micro. Ouvrez-la via http://localhost (tunnel SSH) ou en HTTPS.');
   }
-  if (apiConfig && apiConfig.imitation_mode !== 'knnvc') {
+  if (apiConfig && apiConfig.imitation_mode !== 'own_voice') {
     notes.push(`L'API est en mode « ${apiConfig.imitation_mode} » : la traduction n'est pas lue avec la voix de l'orateur, l'enrôlement est indisponible.`);
   }
   const who = speaker();
   const status = enrollment.get(who.speakerId)?.status;
-  if (apiConfig?.imitation_mode === 'knnvc' && status && !status.complete) {
+  if (apiConfig?.imitation_mode === 'own_voice' && status && !status.complete) {
     notes.push(`${who.name} n'est pas enrôlé : ses traductions seront lues avec la voix de synthèse standard.`);
   }
   for (const vocab of vocabularies.filter((v) => room.vocabularies.includes(v.name))) {
